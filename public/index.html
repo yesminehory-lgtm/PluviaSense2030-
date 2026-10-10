@@ -1,0 +1,152 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PLUVIA SENSE - flood early-warning platform</title>
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+:root{--teal:#5db0bd}*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;color:#e8eef5;background:#0d1b2a}
+header{position:fixed;top:0;left:0;right:0;height:56px;z-index:6;display:flex;align-items:center;gap:8px;padding:0 14px;background:rgba(9,22,36,.95)}
+header .sp{flex:1}#st{font-size:12px;color:#9fb3c8}.wm{height:20px;filter:brightness(0) invert(1)}
+button{font:inherit;cursor:pointer;border:0;border-radius:8px;padding:8px 12px;background:#1d3b57;color:#fff}button.on,button.pri{background:var(--teal);color:#06283d;font-weight:600}button:disabled{opacity:.45;cursor:not-allowed}
+#map{position:fixed;inset:56px 0 0 0}
+#banner{position:fixed;top:56px;left:0;right:0;z-index:5;padding:8px 14px;font-weight:600;display:none}#banner.warn{display:block;background:#f08a24;color:#06283d}#banner.ok{display:block;background:#2bb673;color:#06283d}
+#hud{position:fixed;top:70px;left:12px;z-index:4;width:290px;padding:10px;border-radius:12px;background:rgba(9,22,36,.88);font-size:13px}
+.bars{display:flex;gap:6px;align-items:flex-end;height:52px;margin:6px 0}.bars span{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}.bars i{display:block;width:20px;border-radius:3px}.bars em{font-size:10px;color:#9fb3c8;font-style:normal}
+#hud label{margin-right:10px;font-size:12px}
+#panel{position:fixed;top:56px;right:0;bottom:0;width:390px;max-width:100vw;z-index:4;overflow:auto;padding:12px;background:rgba(9,22,36,.96);display:none}body.ctrl #panel{display:block}
+#alerts{position:fixed;left:12px;top:215px;width:350px;z-index:7;display:none}body.ctrl #alerts{display:block}
+.card{background:#14304a;border-radius:10px;padding:10px;margin-bottom:10px}.card ul{margin:6px 0 0;padding-left:18px}.mut{color:#9fb3c8;font-size:12px}.al{border:2px solid #e5383b}
+.badge{padding:2px 8px;border-radius:99px;font-size:11px;color:#06283d;font-weight:700}.bar{height:6px;background:#27465f;border-radius:4px;margin:6px 0}.bar i{display:block;height:100%;border-radius:4px;background:var(--teal)}
+.card img,.card video{max-width:100%;max-height:170px;border-radius:8px;margin:6px 4px 0 0;display:block}details{margin:6px 0;font-size:12px}
+#modal,#smodal{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center}#modal.show,#smodal.show{display:flex}
+.box{width:min(520px,94vw);max-height:92vh;overflow:auto;background:#10263b;border-radius:14px;padding:16px}.box label{display:block;margin:10px 0 4px;color:#9fb3c8;font-size:12px}
+.box select,.box textarea,.box input{width:100%;padding:8px;border-radius:8px;border:1px solid #2c4b66;background:#0b1a29;color:#fff;font:inherit}
+#cam{width:100%;border-radius:10px;margin-top:8px;background:#000}#th img,#th video{width:84px;height:62px;object-fit:cover;border-radius:6px;margin:6px 6px 0 0}.row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}.req{color:#f2c230;font-size:12px}
+.dot{text-align:center;cursor:pointer}.dot i{display:block;margin:auto;width:16px;height:16px;border-radius:50%;background:var(--c);border:2px solid #fff;animation:p 1.6s infinite}.dot.sq i{border-radius:3px}.dot b{font-size:11px;color:#fff;text-shadow:0 0 3px #000}
+body:not(.ctrl) .rep{display:none}@keyframes p{0%{box-shadow:0 0 0 0 var(--c)}100%{box-shadow:0 0 0 18px transparent}}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:20;background:#5db0bd;color:#06283d;padding:10px 16px;border-radius:10px;font-weight:600;display:none;max-width:90vw}.maplibregl-popup-content{color:#06283d}
+</style></head><body>
+<header><img src="icon.png" height="38" alt=""><img class="wm" src="wordmark.png" alt="PLUVIA SENSE"><span id="st">connecting...</span><span class="sp"></span>
+<button id="tR" class="on">Report an incident</button><button id="tC">Control room <span id="bd"></span></button><button id="bSub">Get alerts</button><button id="bGeo">Use my location</button></header>
+<div id="banner"></div>
+<div id="hud"><div id="hw">Loading weather...</div><label><input type="checkbox" id="cModel" checked> Rain grid</label><label><input type="checkbox" id="cRadar" checked> Radar</label>
+<div class="mut">Radar: RainViewer (past 2 h, coarse); coverage varies.</div></div>
+<div id="map"></div><div id="alerts"></div><aside id="panel"></aside>
+<div id="modal"><div class="box"><h3 style="margin:0">Report a problem</h3><div id="co" class="mut"></div><div id="wxat" class="mut"></div>
+<label>Type</label><select id="ty"><option value="flood">Flooding</option><option value="accident">Accident</option><option value="drain">Blocked drain</option><option value="power">Power line / electrical hazard</option><option value="other">Other</option></select>
+<label>Severity</label><select id="sv"><option value="1">Low</option><option value="2" selected>Medium</option><option value="3">High - people in danger</option></select>
+<label>Description</label><textarea id="ds" rows="2" placeholder="What is happening?"></textarea>
+<label>Live camera photo or video <span class="req">(required)</span></label>
+<video id="cam" autoplay playsinline muted hidden></video>
+<div id="cb" hidden style="margin-top:8px"><button type="button" id="bSnap">Capture photo</button> <button type="button" id="bRec">Record 8 s</button></div>
+<div id="noCam" hidden class="mut" style="margin-top:8px">Camera unavailable (needs permission, and localhost/HTTPS). <button type="button" id="bNo">Send without camera (marked unverified)</button></div>
+<div id="th"></div><div class="row"><button type="button" id="bX">Cancel</button><button type="button" class="pri" id="bSend" disabled>Send report</button></div></div></div>
+<div id="smodal"><div class="box"><h3 style="margin:0">Get rain and flood alerts</h3><div class="mut">Receive the warning one hour before intense rain, with road cut-off and reopening times.</div>
+<label>I am a</label><select id="sr"><option value="parent">Parent</option><option value="school">School</option></select><label>Name</label><input id="sn"><label>Phone or e-mail</label><input id="sc"><label>School (optional)</label><input id="ss">
+<div class="row"><button type="button" id="sX">Cancel</button><button type="button" class="pri" id="sOk">Subscribe</button></div></div></div>
+<div id="toast"></div>
+<script>
+const C=['#2bb673','#f2c230','#f08a24','#e5383b'],RC={LOW:'#2bb673',MODERATE:'#f2c230',HIGH:'#f08a24',CRITICAL:'#e5383b'},NAMES=['','WATCH','WARNING','SEVERE'],$=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hm=t=>new Date(t).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Africa/Tunis'});
+const map=new maplibregl.Map({container:'map',center:[10.18,36.81],zoom:12.3,pitch:62,bearing:-25,maxPitch:80,style:{version:8,
+ sources:{sat:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19,attribution:'Imagery: Esri, Maxar, Earthstar Geographics'},
+  dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],encoding:'terrarium',tileSize:256,maxzoom:14,attribution:'Terrain: AWS Terrain Tiles'},
+  omt:{type:'vector',url:'https://tiles.openfreemap.org/planet',attribution:'Buildings: OpenFreeMap / OpenStreetMap contributors'}},
+ layers:[{id:'sat',type:'raster',source:'sat'},{id:'bld',type:'fill-extrusion',source:'omt','source-layer':'building',minzoom:14,
+  paint:{'fill-extrusion-color':'#d6dee8','fill-extrusion-height':['coalesce',['get','render_height'],6],'fill-extrusion-base':['coalesce',['get','render_min_height'],0],'fill-extrusion-opacity':.78}}],
+ terrain:{source:'dem',exaggeration:1.3}}});
+map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'bottom-left');
+let sensors={},reports=[],warnings=[],outbox=[],subs={},sM={},rM={},pin=null,gps=false,media=[],stream=null,mode='report',popup=null,noCam=false,unseen=0;const alertEls={};
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',4500)}
+function mk(store,id,lng,lat,cls,onclick){if(store[id])return store[id];const e=document.createElement('div');e.className='dot '+cls;e.innerHTML='<i></i><b></b>';e.onclick=ev=>{ev.stopPropagation();onclick(id)};return store[id]=new maplibregl.Marker({element:e}).setLngLat([lng,lat]).addTo(map)}
+function draw(){for(const s of Object.values(sensors)){if(!isFinite(s.lat))continue;const e=mk(sM,s.id,s.lon,s.lat,'',showSensor).getElement();e.style.setProperty('--c',s.offline?'#7a8896':C[s.level]);e.querySelector('b').textContent=s.name.replace(' (demo)','')}
+ for(const r of reports){const e=mk(rM,r.id,r.lon,r.lat,'sq rep',showReport).getElement();e.style.setProperty('--c',r.status==='resolved'?'#7a8896':RC[r.riskLevel]);e.querySelector('b').textContent=r.type}}
+function pop(lng,lat,html){popup&&popup.remove();popup=new maplibregl.Popup({offset:14}).setLngLat([lng,lat]).setHTML(html).addTo(map)}
+function showSensor(id){const s=sensors[id];pop(s.lon,s.lat,`<b>${esc(s.name)}</b><br>${s.offline?'offline':`Rain ${s.rain} mm/h<br>Water level ${s.wl} cm<br>Risk ${s.risk}/100<br>Battery ${s.battery??'?'}%`}`)}
+function showReport(id){const r=reports.find(x=>x.id===id);if(r)pop(r.lon,r.lat,`<b>${esc(r.type)}</b> - ${esc(r.status)}<br>Risk ${r.risk}/100 (${r.riskLevel})<br>${esc(r.decision)}`)}
+const fly=(lng,lat)=>map.flyTo({center:[lng,lat],zoom:16.2,pitch:65,speed:.8});
+// ---------- live weather: model rain grid + radar ----------
+async function loadWx(){try{const[g,w]=await Promise.all([fetch('/api/weather/grid').then(r=>r.json()),fetch('/api/weather').then(r=>r.json())]);
+ map.getSource('wxg')&&map.getSource('wxg').setData(g);
+ $('#hw').innerHTML=w.error?'Weather unavailable (check internet)':`<b>Live weather</b> <span class="mut">${esc(w.source)} - updated ${hm(w.updated)}</span><div>Rain now (max in area): <b>${(+w.now).toFixed(1)} mm/h</b></div><div class="bars">${w.next.map(h=>`<span title="${hm(h.t)}: ${h.p.toFixed(1)} mm"><i style="height:${Math.min(34,2+h.p*2.4)}px;background:${h.p>=10?'#f08a24':h.p>=1?'#3fa9f5':'#5b7a93'}"></i><em>${hm(h.t).slice(0,2)}h</em></span>`).join('')}</div>`}catch{}}
+async function loadRadar(){try{const j=await(await fetch('https://api.rainviewer.com/public/weather-maps.json')).json(),f=j.radar.past[j.radar.past.length-1];
+ if(map.getLayer('radar'))map.removeLayer('radar');if(map.getSource('radar'))map.removeSource('radar');
+ map.addSource('radar',{type:'raster',tiles:[`${j.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`],tileSize:256,maxzoom:7,attribution:'Radar: RainViewer'});
+ map.addLayer({id:'radar',type:'raster',source:'radar',paint:{'raster-opacity':.55},layout:{visibility:$('#cRadar').checked?'visible':'none'}},'wxg')}catch{}}
+map.on('load',()=>{map.addSource('wxg',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+ map.addLayer({id:'wxg',type:'circle',source:'wxg',paint:{'circle-radius':['interpolate',['exponential',2],['zoom'],8,7,16,1792],'circle-blur':.9,'circle-pitch-alignment':'map','circle-pitch-scale':'map',
+  'circle-opacity':['interpolate',['linear'],['get','p'],0,0,.1,.3,2,.5,10,.65],'circle-color':['interpolate',['linear'],['get','p'],0,'#7fd0ff',2,'#3fa9f5',5,'#2166ac',10,'#f2c230',20,'#f08a24',40,'#e5383b']}});
+ loadWx();loadRadar();setInterval(()=>{loadWx();loadRadar()},300000)});
+$('#cModel').onchange=e=>map.getLayer('wxg')&&map.setLayoutProperty('wxg','visibility',e.target.checked?'visible':'none');
+$('#cRadar').onchange=e=>map.getLayer('radar')&&map.setLayoutProperty('radar','visibility',e.target.checked?'visible':'none');
+// ---------- control room ----------
+function repCard(r){const m=r.media[0];return `<div class="card"><span class="badge" style="background:${RC[r.riskLevel]}">${r.riskLevel}</span> <b>${esc(r.type).toUpperCase()}</b> <span class="mut">${esc(r.source)} - ${new Date(r.ts).toLocaleTimeString()}</span> <button data-fly="${r.lon},${r.lat}">Locate</button>
+ ${r.media.map(x=>x.kind==='video'?`<video src="${x.url}" controls muted></video>`:`<a href="${x.url}" target="_blank"><img src="${x.url}"></a>`).join('')}
+ <div>Risk intensity <b>${r.risk}/100</b></div><div class="bar"><i style="width:${r.risk}%;background:${RC[r.riskLevel]}"></i></div><div><b>Suggested decision:</b> ${esc(r.decision)}</div>
+ <div class="mut">Credibility ${r.verification}%${r.live?' - live camera capture':' - no live capture'}${r.nearest?` - nearest node ${esc(r.nearest.name)} (${r.nearest.km} km)`:''}</div><div>${esc(r.description)}</div>
+ <details><summary>Other recommended actions</summary><ul>${r.actions.map(a=>`<li>${esc(a)}</li>`).join('')}</ul></details>
+ <div>${['acknowledged','dispatched','resolved'].map(st=>`<button data-id="${r.id}" data-st="${st}" ${r.status===st?'class="on"':''}>${st}</button>`).join(' ')}</div></div>`}
+function panel(){const al=Object.values(sensors).filter(s=>s.level>0).sort((a,b)=>b.risk-a.risk);
+ let h=`<div class="card"><b>Forecast warnings</b><div class="mut">Subscribers: ${subs.authority||0} authorities, ${subs.school||0} schools, ${subs.parent||0} parents</div>
+ <div style="margin-top:6px"><button data-demo="55">Demo: heavy rain in 55 min</button> <button data-demo="180">in 3 h</button> <button data-demo="off">End demo</button></div></div>`;
+ h+=warnings.map(w=>{const l=w.log&&w.log[w.log.length-1];return `<div class="card"><span class="badge" style="background:${C[w.level]}">${NAMES[w.level]}</span> <b>${hm(w.start)} - ${hm(w.end)}</b> peak ${w.peak} mm/h <span class="mut">${w.status}</span>
+ <div class="mut">Road cut-off from about ${hm(w.cutStart)}, reopening about ${hm(w.release)} (${w.cutMin} min) - estimates</div>
+ ${l?`<div class="mut">Last: ${l.stage} - sent to ${l.sent.authority} authorities, ${l.sent.school} schools, ${l.sent.parent} parents</div><details><summary>Messages sent</summary><div><b>Parents:</b> ${esc(l.text.parent)}</div><div><b>Schools:</b> ${esc(l.text.school)}</div><div><b>Authorities:</b> ${esc(l.text.authority)}</div></details>`:''}
+ ${w.status==='active'?`<button data-clear="${w.id}">Issue all-clear</button>`:''}</div>`}).join('');
+ h+=`<div class="card"><b>Sensor alerts</b> (${al.length})</div>`+al.map(s=>`<div class="card"><span class="badge" style="background:${C[s.level]}">${NAMES[s.level]}</span> <b>${esc(s.name)}</b> <button data-fly="${s.lon},${s.lat}">Locate</button>
+ <div>Rain ${s.rain} mm/h - Water ${s.wl} cm - Risk ${s.risk}/100</div><div class="bar"><i style="width:${s.risk}%"></i></div>
+ <div class="mut">Trend ${s.pred.slope} cm/min${s.pred.in30!=null?` - about ${s.pred.in30} cm in 30 min`:''}${s.pred.eta?` - critical level in about ${s.pred.eta} min`:''}</div></div>`).join('');
+ h+=`<div class="card"><b>Reports</b> (${reports.length})</div>`+reports.slice(0,25).map(repCard).join('');
+ h+=`<div class="card"><b>Notifications sent</b>${outbox.map(o=>`<div class="mut">${hm(o.ts)} ${esc(o.stage)} to ${esc(o.to)} [${esc(o.channel)}]</div>`).join('')||'<div class="mut">none yet</div>'}</div>`;
+ $('#panel').innerHTML=h}
+$('#panel').onclick=async e=>{const b=e.target,j=(u,m,d)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(d||{})});
+ if(b.dataset.fly){const[lng,lat]=b.dataset.fly.split(',').map(Number);fly(lng,lat)}
+ if(b.dataset.st)await j('/api/reports/'+b.dataset.id,'PATCH',{status:b.dataset.st});
+ if(b.dataset.clear)await j(`/api/warnings/${b.dataset.clear}/clear`,'POST');
+ if(b.dataset.demo)b.dataset.demo==='off'?await fetch('/api/demo/forecast',{method:'DELETE'}).then(loadWx):await j('/api/demo/forecast','POST',{startInMin:+b.dataset.demo,durationH:2,peak:28}).then(loadWx)};
+function showAlert(r){let el=alertEls[r.id];const fresh=!el;if(fresh){el=alertEls[r.id]=document.createElement('div');el.className='card al';el.dataset.id=r.id;$('#alerts').prepend(el);while($('#alerts').children.length>3)$('#alerts').lastChild.remove()}
+ const m=r.media[0];el.innerHTML=`<div><span class="badge" style="background:${RC[r.riskLevel]}">${r.riskLevel}</span> <b>NEW ${esc(r.type).toUpperCase()} ALERT</b> <button data-x style="float:right">x</button></div>
+ ${m?(m.kind==='video'?`<video src="${m.url}" controls muted></video>`:`<img src="${m.url}">`):'<div class="mut">Waiting for the camera frame...</div>'}
+ <div>Risk intensity <b>${r.risk}/100</b></div><div class="bar"><i style="width:${r.risk}%;background:${RC[r.riskLevel]}"></i></div><div><b>Suggested decision:</b> ${esc(r.decision)}</div>
+ <div class="mut">${esc(r.source)}${r.nearest?` - near ${esc(r.nearest.name)}`:''}</div><div><button data-a="acknowledged">Acknowledge</button> <button data-a="dispatched">Dispatch</button> <button data-loc>Locate</button></div>`;
+ if(fresh&&['HIGH','CRITICAL'].includes(r.riskLevel))try{const a=new AudioContext(),o=a.createOscillator();o.connect(a.destination);o.frequency.value=880;o.start();setTimeout(()=>o.stop(),250)}catch{}}
+$('#alerts').onclick=async e=>{const el=e.target.closest('.al');if(!el)return;const id=el.dataset.id,r=reports.find(x=>x.id===id);
+ if(e.target.dataset.x!==undefined){el.remove();delete alertEls[id]}if(e.target.dataset.loc!==undefined&&r)fly(r.lon,r.lat);
+ if(e.target.dataset.a){await fetch('/api/reports/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:e.target.dataset.a})});el.remove();delete alertEls[id]}};
+function banner(){const a=warnings.find(w=>w.status==='active'),c=warnings.find(w=>w.status==='cleared'&&Date.now()-(w.stages.clear||0)<36e5),b=$('#banner');
+ if(a){const l=a.log&&a.log[a.log.length-1];b.className='warn';b.textContent=l?l.text.parent:`${NAMES[a.level]}: intense rainfall ${hm(a.start)} to ${hm(a.end)}`}else if(c){b.className='ok';b.textContent='ALL CLEAR: the rain episode is over and roads are safe again.'}else b.className=''}
+const es=new EventSource('/api/stream');es.onopen=()=>$('#st').textContent='live';es.onerror=()=>$('#st').textContent='reconnecting...';
+es.onmessage=e=>{const m=JSON.parse(e.data);
+ if(m.type==='state'){sensors=Object.fromEntries(m.data.sensors.map(s=>[s.id,s]));reports=m.data.reports;warnings=m.data.warnings;outbox=m.data.outbox;subs=m.data.subs}
+ else if(m.type==='sensor')sensors[m.data.id]=m.data;
+ else if(m.type==='warning'){const i=warnings.findIndex(w=>w.id===m.data.id);i<0?warnings.unshift(m.data):warnings[i]=m.data;fetch('/api/state').then(r=>r.json()).then(s=>{outbox=s.outbox;panel()});if(m.data.log){const l=m.data.log[m.data.log.length-1];toast(l.stage==='clear'?'All clear issued':'Warning sent to authorities, schools and parents')}}
+ else{const i=reports.findIndex(r=>r.id===m.data.id);if(i<0){reports.unshift(m.data);if(mode==='ctrl')showAlert(m.data);else{unseen++;$('#bd').textContent='('+unseen+')'}}else{reports[i]=m.data;alertEls[m.data.id]&&showAlert(m.data)}}
+ draw();panel();banner()};
+function setMode(m){mode=m;document.body.classList.toggle('ctrl',m==='ctrl');$('#tR').classList.toggle('on',m==='report');$('#tC').classList.toggle('on',m==='ctrl');if(m==='ctrl'){unseen=0;$('#bd').textContent='';reports.filter(r=>r.status==='new'&&Date.now()-r.ts<9e5).slice(0,3).forEach(showAlert)}}
+$('#tR').onclick=()=>setMode('report');$('#tC').onclick=()=>setMode('ctrl');
+// ---------- report wizard: live camera required ----------
+const coords=()=>{const p=pin.getLngLat();$('#co').textContent=`Pin: ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}${gps?' (GPS)':' (placed on map)'}`;
+ fetch(`/api/weather/at?lat=${p.lat}&lon=${p.lng}`).then(r=>r.json()).then(w=>$('#wxat').textContent=w.error?'':`Weather here: ${(+w.now).toFixed(1)} mm/h now; next hours: ${w.next.slice(0,5).map(h=>h.p.toFixed(1)).join(', ')} mm`).catch(()=>{})};
+function setPin(lng,lat,g){gps=g;if(!pin){pin=new maplibregl.Marker({color:'#e5383b',draggable:true}).setLngLat([lng,lat]).addTo(map);pin.on('dragend',()=>{gps=false;coords()})}else pin.setLngLat([lng,lat]);coords()}
+const upd=()=>{$('#bSend').disabled=!(media.length||(noCam&&$('#ds').value.trim()))};
+function thumbs(){$('#th').innerHTML=media.map(m=>m.kind==='video'?`<video src="${m.data}" muted></video>`:`<img src="${m.data}">`).join('');upd()}
+const add=m=>{media.push({...m,live:true,capturedAt:Date.now()});thumbs()};
+async function startCam(){try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});$('#cam').srcObject=stream;$('#cam').hidden=false;$('#cb').hidden=false;$('#noCam').hidden=true}
+ catch{$('#cam').hidden=true;$('#cb').hidden=true;$('#noCam').hidden=false}}
+function openWiz(){media=[];noCam=false;thumbs();$('#modal').classList.add('show');startCam()}
+function closeWiz(){$('#modal').classList.remove('show');stream&&stream.getTracks().forEach(t=>t.stop());stream=null}
+map.on('click',e=>{if(mode!=='report')return;setPin(e.lngLat.lng,e.lngLat.lat,false);openWiz()});
+$('#bGeo').onclick=()=>navigator.geolocation.getCurrentPosition(p=>{setMode('report');setPin(p.coords.longitude,p.coords.latitude,true);map.flyTo({center:[p.coords.longitude,p.coords.latitude],zoom:17,pitch:60});openWiz()},()=>toast('Location unavailable - tap the map instead'),{enableHighAccuracy:true});
+$('#bSnap').onclick=()=>{const v=$('#cam'),c=document.createElement('canvas');if(!v.videoWidth)return toast('Camera not ready yet');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);add({kind:'image',data:c.toDataURL('image/jpeg',.72)})};
+$('#bRec').onclick=()=>{const ch=[],r=new MediaRecorder(stream,MediaRecorder.isTypeSupported('video/webm')?{mimeType:'video/webm'}:{});r.ondataavailable=e=>ch.push(e.data);
+ r.onstop=()=>{const t=(r.mimeType||'video/mp4').split(';')[0],rd=new FileReader();rd.onload=()=>add({kind:'video',data:rd.result});rd.readAsDataURL(new Blob(ch,{type:t}))};
+ r.start();$('#bRec').textContent='Recording...';setTimeout(()=>{r.stop();$('#bRec').textContent='Record 8 s'},8000)};
+$('#bNo').onclick=()=>{noCam=true;upd();toast('Describe the problem, then send. The report will be marked unverified.')};$('#ds').oninput=upd;$('#bX').onclick=closeWiz;
+$('#bSend').onclick=async()=>{if(!pin)return;const p=pin.getLngLat();$('#bSend').disabled=true;
+ try{const r=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:$('#ty').value,severity:+$('#sv').value,description:$('#ds').value,lat:p.lat,lon:p.lng,gps,media,noCamera:noCam&&!media.length})}),j=await r.json();
+  if(!r.ok)throw new Error(j.error);toast(`Report sent - risk ${j.risk}/100 (${j.riskLevel}), credibility ${j.verification}%`);closeWiz();$('#ds').value='';pin.remove();pin=null}catch(e){toast(e.message||'Could not send the report');upd()}};
+// ---------- subscriptions ----------
+$('#bSub').onclick=()=>$('#smodal').classList.add('show');$('#sX').onclick=()=>$('#smodal').classList.remove('show');
+$('#sOk').onclick=async()=>{const r=await fetch('/api/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:$('#sr').value,name:$('#sn').value,contact:$('#sc').value,school:$('#ss').value})});
+ if(r.ok){toast('Subscribed. You will be warned before intense rain.');$('#smodal').classList.remove('show')}else toast('Please fill in your name and contact')};
+</script></body></html>
