@@ -1,0 +1,1 @@
+{"name":"pluvia-sense","version":"1.0.0","description":"PLUVIA SENSE - urban pluvial flood early-warning platform (TSYP14)","scripts":{"start":"node server.js","simulate":"node simulate.js"},"engines":{"node":">=18"}}
