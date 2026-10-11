@@ -127,8 +127,10 @@ function ingest(n, b) {   // one reading from a device (HTTP or LoRaWAN)
   const f = jpg(b.frame, 2e6); if (f) { fs.writeFileSync(media(`node-${n.id}.jpg`), f); n.frame = true; }
   if (EVENT_TEXT[b.event] && can(n, "cam", 3e5, now)) { n.la.cam = now; n.q.verify = true; raise(n, Math.max(2, n.risk), "camera", EVENT_TEXT[b.event], f ? `node-${n.id}.jpg` : undefined); }
   if (q.battery != null && q.battery < 15 && can(n, "batt", 864e5, now)) { n.la.batt = now; raise(n, 1, "battery", `Battery low (${q.battery}%): schedule maintenance`, undefined, true); }
+  const qc = confidence(n, now); n.conf = qc.c; n.confWhy = qc.why;
   return { code: 200, ok: true, mode: n.mode, next_interval_s: MODES[n.mode].interval, confidence: n.conf };
 }
+const out = ({ code, ...rest }) => rest;   // never expose the internal status code in the JSON body
 // ---- Risk engine (every 2 s): level, rain intensity, rate of rise, site threshold, vulnerability, confidence; hysteresis on the way down
 const HYST = 5;
 function tick() {
@@ -141,7 +143,7 @@ function tick() {
       n.boost = storm && n.stormy ? Math.min(50, n.boost + 4) : Math.max(0, n.boost - 5); n.rain = n.real + n.boost; const pL = n.L;
       n.L = clamp(n.L + n.rain * .035 - .2 - n.L * .004 + (Math.random() - .5) * .1, 8, n.thr * 1.5); n.rate = n.L - pL;
       if (++n.sc % 15 === 0) pushSeries(n, now, n.L, n.rain);
-    } else if (n.sim) { n.rain = n.real; n.rate = 0; } else n.rain = n.devRain;
+    } else if (n.sim) { n.rain = n.real; n.rate = 0; } else { n.rain = n.devRain; if (now - n.lastReal > 2 * MODES[n.mode].interval * 1000) n.rate = 0; }   // a silent device must not keep an old rate of rise
     if (n.lastReal && n.sim && can(n, "comms", 216e5, now)) { n.la.comms = now; logEv(n.id, "quality", "Communication timeout"); raise(n, 1, "comms", "Communication timeout: no data received. Check power, gateway and coverage.", undefined, true); }
     if (n.lastReal && !n.sim && now - n.lastReal > 3 * MODES[n.mode].interval * 1000 && !n.q.missLogged) { n.q.missLogged = true; logEv(n.id, "quality", "Missing data: readings are late"); }
     const qc = confidence(n, now); n.conf = qc.c; n.confWhy = qc.why;
@@ -456,7 +458,7 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/readings" && req.method === "POST") {
       if (!eq(req.headers["x-device-key"] || "", DEV)) return J(res, 401, { error: "Invalid device key" });
       const b = JSON.parse((await body(req, 3e6)).toString() || "{}"), n = NODES.find(x => x.id === b.node);
-      if (!n) return J(res, 404, { error: "Unknown node id" }); const r = ingest(n, b); return J(res, r.code, r.error ? { error: r.error } : r);
+      if (!n) return J(res, 404, { error: "Unknown node id" }); const r = ingest(n, b); return J(res, r.code, r.error ? { error: r.error } : out(r));
     }
     if (p === "/api/lorawan/uplink" && req.method === "POST") {
       if (!eq(req.headers["x-device-key"] || u.searchParams.get("key") || "", DEV)) return J(res, 401, { error: "Invalid device key" });
@@ -464,7 +466,7 @@ const server = http.createServer(async (req, res) => {
       const n = NODES.find(x => devId === x.id.toLowerCase() || devId.endsWith("-" + x.id.toLowerCase()) || devId.endsWith("_" + x.id.toLowerCase())); if (!n) return J(res, 404, { error: "Device name must end with a node id (e.g. pluvia-n4)" });
       const rx = (up.rx_metadata || b.rxInfo || [])[0] || {}; lorawanHits.push(Date.now()); lorawanHits = lorawanHits.filter(t => Date.now() - t < 36e5);
       const r = ingest(n, { level_cm: dp.level_cm, rain_mmh: dp.rain_mmh, battery_pct: dp.battery_pct, fw: dp.fw, event: dp.event, buffered: !!dp.buffered, seq: up.f_cnt != null ? up.f_cnt : b.fCnt, ts: dp.ts || up.received_at || b.time, rssi: rx.rssi, snr: rx.snr != null ? rx.snr : rx.loRaSNR });
-      return J(res, r.code, r.error ? { error: r.error } : r);
+      return J(res, r.code, r.error ? { error: r.error } : out(r));
     }
     // --- operations
     if ((m = /^\/api\/items\/(\w+)$/.exec(p)) && req.method === "PATCH") {

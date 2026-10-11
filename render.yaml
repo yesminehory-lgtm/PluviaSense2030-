@@ -1,0 +1,20 @@
+# Render Blueprint: creates the web service with the right settings (no manual configuration needed)
+services:
+  - type: web
+    name: pluvia-sense
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: OPS_TOKEN          # administrator code (generated; read it in Render > Environment)
+        generateValue: true
+      - key: DEVICE_KEY         # key used by sensors and the LoRaWAN network server (generated)
+        generateValue: true
+      - key: SESSION_SECRET     # signs login sessions (generated: keeps users signed in across restarts)
+        generateValue: true
+      - key: DEMO_MODE          # 1 = simulate sites that have no device yet. Set to 0 in production.
+        value: "1"
+      - key: OFFICIAL_DOMAINS   # e-mail domains flagged as official in access requests (comma separated)
+        value: gov.tn
